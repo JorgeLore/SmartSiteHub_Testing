@@ -1,0 +1,7 @@
+selenium
+requests
+python-dotenv
+pytest
+pydantic
+pydantic[email]
+pandas
