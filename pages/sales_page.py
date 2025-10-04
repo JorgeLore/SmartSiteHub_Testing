@@ -1,161 +1,162 @@
 # pages/sales_page.py
-
-from selenium import webdriver
+from config.logger import get_logger
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from locators.sales_locators import SalesLocators
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 import time
+import os
+
+logger = get_logger(__name__)
 
 class SalesPage:
-    """Sales page with all functionalities"""
-    
-    def __init__(self, driver):
+    """Page Object for Sales Page.
+    Contains methods to interact with tickets, products, and payment options.
+    """
+
+    def __init__(self, driver, timeout: int = 10):
         self.driver = driver
-        self.pending_tickets_btn = (By.ID, "nuevoTicketContenido0-tab")
-        self.new_ticket_btn = (By.CSS_SELECTOR, ".feather-plus-circle")
-        self.ticket_name = (By.CSS_SELECTOR, ".nav-link.active")
-        self.all_tickets = (By.CSS_SELECTOR, ".nav-link")
-        self.remove_product_btn = (By.CSS_SELECTOR, ".datosVista button[onclick*='eliminarProductoTicketNormalActual(this);']")
-        self.products_on_ticket = (By.CSS_SELECTOR, ".widget-list-item-description-title")
-        self.remove_ticket_confirm = (By.CSS_SELECTOR, ".swal2-confirm")
-        self.remove_ticket_cancel = (By.CSS_SELECTOR, ".swal2-cancel")
-        self.payment_with_cash = (By.ID, "divEfectivoTicketNormal")
-        self.payment_with_card = (By.ID, "divTarjetaTicketNormal")
-        self.payment_with_cash_and_card = (By.ID, "divMixtoTicketNormal")
-        self.client_cash_input = (By.ID, "efectivoCliente")
-        self.total_cash_input = (By.ID, "enEfectivo")
-        self.change = (By.ID, "cambio")
-        self.reference_card_input = (By.ID, "referenciaTarjeta")
-        self.total_price_card = (By.ID, "totalTarjeta")
-        self.in_card = (By.ID, "enTarjeta")
-        self.remaining_ammount = (By.ID, "totalRestante")
-        self.total_to_pay = (By.ID, "totalPagarH2ModalTicketNormal")
-        
+        self.timeout = timeout
+
+    # ---------- Utility methods ----------
+
+    def wait_and_click(self, locator):
+        """Wait until element is clickable and then click it."""
+        element = WebDriverWait(self.driver, self.timeout).until(
+            EC.element_to_be_clickable(locator)
+        )
+        element.click()
+        return element
+
+    def write_input(self, locator, value, clear=True):
+        """Write text into input field with optional clearing."""
+        element = WebDriverWait(self.driver, self.timeout).until(
+            EC.presence_of_element_located(locator)
+        )
+        if clear:
+            element.clear()
+        element.send_keys(value)
+        return element
+
+    def get_text(self, locator) -> str:
+        """Return text from element."""
+        element = WebDriverWait(self.driver, self.timeout).until(
+            EC.presence_of_element_located(locator)
+        )
+        return element.text.strip()
+
+    def get_value(self, locator) -> str:
+        """Return 'value' attribute from element."""
+        return self.driver.find_element(*locator).get_attribute("value")
+
+    # ---------- Ticket actions ----------
 
     def start_new_ticket(self):
-        """Start a new ticket for sales"""
-        self.driver.find_element(*self.new_ticket_btn).click()
-        
-    def get_ticket_id(self):
-        """Get and return the number id of the current ticket"""
-        return self.driver.find_element(*self.ticket_name).text.split(" ")[1]
+        """Create a new ticket."""
+        self.wait_and_click(SalesLocators.new_ticket_btn)
 
-    def add_product_by_code(self, code):
-        """Add a product to the current ticket by its name code"""
+    def get_ticket_id(self) -> str:
+        """Return the current active ticket ID."""
+        return self.get_text(SalesLocators.ticket_name).split(" ")[1]
+
+    def remove_current_ticket(self, confirm=True):
+        """Remove current ticket. Confirm or cancel based on 'confirm' flag."""
         ticket_id = self.get_ticket_id()
-        
-        self.product_input = (By.ID, f"buscadorProductos{ticket_id}")
-        self.add_product_btn = (By.XPATH, f'//*[@id="listaProductosBusqueda{ticket_id}"]/div')
-        
-        input_box = self.driver.find_element(*self.product_input)
-        input_box.clear()
-        input_box.send_keys(code)
+        self.wait_and_click(SalesLocators.ticket_remove_icon(ticket_id))
+        if confirm:
+            self.wait_and_click(SalesLocators.remove_ticket_confirm)
+        else:
+            self.wait_and_click(SalesLocators.remove_ticket_cancel)
+
+    def get_ticket_list(self) -> list[str]:
+        """Return all open tickets as a list of names."""
+        tickets = self.driver.find_elements(*SalesLocators.all_tickets)
+        return [ticket.text.strip() for ticket in tickets]
+
+    # ---------- Product actions ----------
+
+    def add_product_by_code(self, code: str):
+        """Add a product to the ticket using its code."""
+        ticket_id = self.get_ticket_id()
+        input_box = self.write_input(SalesLocators.product_input(ticket_id), code)
+        WebDriverWait(self.driver, self.timeout).until(
+            EC.presence_of_all_elements_located(SalesLocators.add_product_btn(ticket_id))
+        )
         time.sleep(2)
-        resultados = self.driver.find_elements(By.CSS_SELECTOR, ".col-7")
-        for r in resultados:
-            try:
-                nombre = r.text.strip().split('\n')[0]
-                if nombre == code:
-                    r.click()
-                    break
-            except Exception as e:
-                print(f"Error al procesar elemento: {e}")
-        time.sleep(2) 
+        #results = self.driver.find_elements_by_css_selector(".col-7")
+        results = self.driver.find_elements(By.CSS_SELECTOR, ".col-7")
+        for result in results:
+            product_name = result.text.strip().split("\n")[0]
+            if product_name == code:
+                result.click()
+                break
+        logger.info(f"Product {code} added to ticket {ticket_id}")
+        time.sleep(0.5)
 
-    def get_ticket_total(self):
-        """Get and return the total price of the current ticket."""
-        ticket_id = self.get_ticket_id()
-        print(ticket_id)
-        self.total_text = (By.ID, f"totalPagarH2Normal{ticket_id}")
-        return float(self.driver.find_element(*self.total_text).text.split()[1])
-        
-    def remove_product_by_code(self, code):
-        """Remove a product from the current ticket by the name code."""
-        products = self.driver.find_elements(*self.products_on_ticket)
-        product_names = [item.text for item in products]
-        print(product_names)
-        
+    def remove_product_by_code(self, code: str):
+        """Remove a product from ticket by its code name."""
+        products = self.driver.find_elements(*SalesLocators.products_on_ticket)
+        names = [item.text for item in products]
+        logger.debug(names)
         try:
-            indice = product_names.index(code)
-            print(f"El índice de producto es: {indice}")
+            idx = names.index(code)
+            n = self.driver.find_elements(*SalesLocators.remove_product_btn)
+            n_rm = len(n)
+            logger.debug(n)
+            logger.debug(n_rm)
+            self.driver.find_elements(*SalesLocators.remove_product_btn)[idx].click()
+            self.wait_and_click(SalesLocators.remove_ticket_confirm)
+            logger.info(f"Product '{code}' removed from ticket.")
         except ValueError:
-            print("El producto no se encuentra en la lista.")
+            logger.error(f"Product '{code}' not found in ticket.")
+            raise
 
-        print(*self.remove_product_btn)
-        test = self.driver.find_elements(*self.remove_product_btn)
-        print(test)
-        test[indice].click()
-        self.driver.find_element(By.CLASS_NAME, value='swal2-confirm').click()
-        time.sleep(2)
-        
-    def remove_current_ticket(self):
-        """Remove the current ticket."""
+    def get_ticket_total(self) -> float:
+        """Return total amount for current ticket."""
+        time.sleep(0.5)
         ticket_id = self.get_ticket_id()
-        
-        self.driver.find_element(By.XPATH, f'//*[@id="nuevoTicketContenido{ticket_id}"]/div/div[1]/div/div/div[3]/div[2]/div/div/div[2]/span').click()
-        WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(self.remove_ticket_confirm)).click()
-        
-    def cancel_remove_current_ticket(self):
-        """Cancel the remove of the current ticket"""
+        logger.debug(f"ticket id={ticket_id}")
+        total_text = self.get_text(SalesLocators.total_ticket_price(ticket_id))
+        return float(total_text.split()[1])
+
+    # ---------- Payment actions ----------
+
+    def open_payment_modal(self):
+        """Open the payment modal for the current ticket."""
         ticket_id = self.get_ticket_id()
-        
-        self.driver.find_element(By.XPATH, f'//*[@id="nuevoTicketContenido{ticket_id}"]/div/div[1]/div/div/div[3]/div[2]/div/div/div[2]/span').click()
-        WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(self.remove_ticket_cancel)).click()
-        
-    def get_ticket_list(self):
-        """Return all current open tickets."""
-        all_tickets = self.driver.find_elements(*self.all_tickets)
-        all_tickets_names = []
-        for ticket in all_tickets:
-            print(ticket.text)
-            all_tickets_names.append(ticket.text.strip())
-        return all_tickets_names
-    
-    def pay_with_cash(self, cash_used):
-        """"Choose to pay with cash and return the change."""
-        ticket_id = self.get_ticket_id()
-        self.driver.find_element(By.ID, f'botonParaCobrar-normal{ticket_id}').click()
-        self.driver.find_element(*self.client_cash_input).send_keys(cash_used)
-        change = self.driver.find_element(*self.change).get_attribute("value")
-        return float(change)
-    
-    def pay_with_card(self, reference_card):
-        """"Choose to pay with card, input reference and return total to p."""
-        ticket_id = self.get_ticket_id()
-        self.driver.find_element(By.ID, f'botonParaCobrar-normal{ticket_id}').click()
-        self.driver.find_element(*self.payment_with_card).click()
-        self.driver.find_element(*self.reference_card_input).send_keys(reference_card)
-        total = self.driver.find_element(*self.total_price_card).get_attribute("value")
-        return float(total)
-    
-    def mix_payment_cash(self, cash_used):
-        """"Choose to pay with card, input reference and return total to p."""
-        ticket_id = self.get_ticket_id()
-        self.driver.find_element(By.ID, f'botonParaCobrar-normal{ticket_id}').click()
-        self.driver.find_element(*self.payment_with_cash_and_card).click()
-        total_cash = float(self.driver.find_element(*self.total_to_pay).text.split(' ')[1])*0.8
-        self.driver.find_element(*self.total_cash_input).send_keys(total_cash)
-        self.driver.find_element(*self.client_cash_input).clear()
-        self.driver.find_element(*self.client_cash_input).send_keys(cash_used)
-        change = self.driver.find_element(*self.change).get_attribute("value")
-        remaining_card = self.driver.find_element(*self.in_card).get_attribute("value")
-        time.sleep(5)
-        return float(change), float(remaining_card)
-    
-    def take_page_screenshot(self, path):
+        self.wait_and_click(SalesLocators.pay_button(ticket_id))
+
+    def pay_with_cash(self, cash_used: float) -> float:
+        """Pay ticket using cash. Returns change."""
+        self.open_payment_modal()
+        self.write_input(SalesLocators.client_cash_input, str(cash_used))
+        return float(self.get_value(SalesLocators.change))
+
+    def pay_with_card(self, reference_card: str) -> float:
+        """Pay ticket using card. Returns total amount."""
+        self.open_payment_modal()
+        self.wait_and_click(SalesLocators.payment_with_card)
+        self.write_input(SalesLocators.reference_card_input, reference_card)
+        return float(self.get_value(SalesLocators.total_price_card))
+
+    def mix_payment_cash(self, cash_used: float) -> tuple[float, float]:
+        """Pay ticket using mixed payment (cash + card).
+        Returns (change, remaining card amount).
+        """
+        self.open_payment_modal()
+        self.wait_and_click(SalesLocators.payment_with_cash_and_card)
+        total_to_pay = float(self.get_text(SalesLocators.total_to_pay).split()[1])
+        total_cash = total_to_pay * 0.8  # assume 80% cash, 20% card
+        self.write_input(SalesLocators.total_cash_input, str(total_cash))
+        self.write_input(SalesLocators.client_cash_input, str(cash_used))
+        change = float(self.get_value(SalesLocators.change))
+        remaining_card = float(self.get_value(SalesLocators.in_card))
+        return change, remaining_card
+
+    # ---------- Misc ----------
+
+    def take_page_screenshot(self, path: str):
+        """Save a screenshot of the current page."""
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         self.driver.save_screenshot(path)
-
-
-
-
-
-
-
-
-
-
-    '''  
-    def is_receipt_generated(self):
-        return self.driver.find_element(*self.receipt_modal).is_displayed()
-    '''
