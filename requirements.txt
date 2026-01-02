@@ -5,3 +5,4 @@ pytest
 pydantic
 pydantic[email]
 pandas
+allure-pytest

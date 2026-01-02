@@ -49,7 +49,7 @@ class SalesPage(BasePage):
         """Add a product to the ticket using its code."""
         ticket_id = self.get_ticket_id()
         input_box = self.write_input(SalesLocators.product_input(ticket_id), code)
-        time.sleep(1)
+        time.sleep(1.5)
         results = self.driver.find_elements(By.CSS_SELECTOR, ".col-7")
         for result in results:
             product_name = result.text.strip().split("\n")[0]
@@ -96,7 +96,9 @@ class SalesPage(BasePage):
         """Pay ticket using cash. Returns change."""
         self.open_payment_modal()
         self.write_input(SalesLocators.client_cash_input, str(cash_used))
-        return float(self.get_value(SalesLocators.change))
+        change = float(self.get_value(SalesLocators.change))
+        self.wait_and_click(SalesLocators.accept_payment)
+        return change
 
     def pay_with_card(self, reference_card: str) -> float:
         """Pay ticket using card. Returns total amount."""

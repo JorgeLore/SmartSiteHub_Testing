@@ -12,7 +12,7 @@ import random
 import pandas as pd
 from pages.login_page import LoginPage
 from pages.sales_page import SalesPage
-from utils import sales_helpers
+from services.sales_service import SalesService
 from config.settings import settings
 from config.logger import get_logger
 
@@ -73,7 +73,7 @@ class TestSales:
     def test_add_multiple_items_and_validate_total(self, products, sales_page):
         """TC-SALES-002: Add multiple products and validate total sum."""
         sales_page.start_new_ticket()
-        expected_total = sales_helpers.add_items_and_get_total(sales_page, products)
+        expected_total = SalesService.add_items_and_get_expected_total(sales_page, products)
         total = sales_page.get_ticket_total()
         assert total == expected_total, f"Expected {expected_total}, got {total}"
 
@@ -82,7 +82,7 @@ class TestSales:
     def test_remove_item_and_validate_total(self, products, sales_page):
         """TC-SALES-003: Remove one product and verify total is updated."""
         sales_page.start_new_ticket()
-        expected_total = sales_helpers.add_items_and_get_total(sales_page, products)
+        expected_total = SalesService.add_items_and_get_expected_total(sales_page, products)
         product_to_remove = random.choice(products)
         sales_page.remove_product_by_code(product_to_remove["name"])
         expected_total -= float(product_to_remove["price"])
@@ -94,20 +94,20 @@ class TestSales:
         """TC-SALES-004: Remove a ticket and confirm deletion."""
         sales_page.start_new_ticket()
         sales_page.start_new_ticket()
-        sales_page.start_new_ticket()
+        current_ticket = sales_page.get_ticket_id()
         sales_page.remove_current_ticket()
         tickets = sales_page.get_ticket_list()
-        assert all("Ticket 3" not in name for name in tickets), "Ticket was not deleted correctly"
+        assert all(f"Ticket {current_ticket}" not in name for name in tickets), "Ticket was not deleted correctly"
 
     @pytest.mark.tc_sales_005
     def test_cancel_remove_current_ticket(self, sales_page):
         """TC-SALES-005: Cancel a ticket deletion and confirm ticket still exists."""
         sales_page.start_new_ticket()
         sales_page.start_new_ticket()
-        sales_page.start_new_ticket()
+        current_ticket = sales_page.get_ticket_id()
         sales_page.remove_current_ticket(confirm=False)
         tickets = sales_page.get_ticket_list()
-        assert "Ticket 3" in tickets, "Ticket was deleted when cancellation was expected"
+        assert f"Ticket {current_ticket}" in tickets, "Ticket was deleted when cancellation was expected"
 
     @pytest.mark.tc_sales_006
     @pytest.mark.parametrize("products", get_random_product_sets(1, 3))
@@ -115,7 +115,7 @@ class TestSales:
         """TC-SALES-006: Pay with cash and verify change is correct."""
         CASH_USED = 1000
         sales_page.start_new_ticket()
-        expected_total = sales_helpers.add_items_and_get_total(sales_page, products)
+        expected_total = SalesService.add_items_and_get_expected_total(sales_page, products)
         expected_change = CASH_USED - expected_total
         change = sales_page.pay_with_cash(CASH_USED)
         assert change == expected_change, f"Expected change {expected_change}, got {change}"
@@ -126,7 +126,7 @@ class TestSales:
         """TC-SALES-007: Pay with card and validate total matches."""
         REFERENCE = 123456789
         sales_page.start_new_ticket()
-        expected_total = sales_helpers.add_items_and_get_total(sales_page, products)
+        expected_total = SalesService.add_items_and_get_expected_total(sales_page, products)
         total_to_pay = sales_page.pay_with_card(REFERENCE)
         assert expected_total == total_to_pay, f"Expected {expected_total}, got {total_to_pay}"
 
@@ -137,12 +137,11 @@ class TestSales:
         CASH_USED = 1000
         sales_page.start_new_ticket()
 
-        expected_total = sales_helpers.add_items_and_get_total(sales_page, products)
+        expected_total = SalesService.add_items_and_get_expected_total(sales_page, products)
         expected_change = CASH_USED - expected_total * 0.8
         expected_remaining_card = expected_total * 0.2
 
         change, remaining_card = sales_page.mix_payment_cash(CASH_USED)
-        sales_page.take_page_screenshot("./logs/tc_sales_008/screenshot.png")
 
         assert round(expected_change, 1) == round(change, 1), "Mismatch in cash change"
         assert round(expected_remaining_card, 1) == round(remaining_card, 1), "Mismatch in remaining card payment"

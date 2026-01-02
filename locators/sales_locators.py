@@ -30,6 +30,7 @@ class SalesLocators:
     in_card = (By.ID, "enTarjeta")
     remaining_amount = (By.ID, "totalRestante")
     total_to_pay = (By.ID, "totalPagarH2ModalTicketNormal")
+    accept_payment = (By.ID, "finalizarCompraTicketNormal")
 
     # --- Dynamic locators ---
     @staticmethod
